@@ -99,6 +99,10 @@ class PPOTrainer(ABC):
         self.logger = UnifiedLogger(strategy.args, self.strategy.is_rank_0())
         
         self.dynamic_sampling_cnt = 0
+        
+        # 时间统计相关变量
+        self.step_start_time = None
+        self.last_step_end_time = None
 
         if self.args.enable_self_evolution:
             # question generation prompt
@@ -431,6 +435,15 @@ class PPOTrainer(ABC):
                 global_experiences = after_filter_global_experiences
                 if len(global_experiences) < args.rollout_batch_size*chunk_size:
                     continue
+                
+                # 记录训练步骤开始时间
+                current_time = time.time()
+                if self.step_start_time is None:
+                    self.step_start_time = current_time
+                
+                # 计算步骤间隔时间
+                step_interval = current_time - self.last_step_end_time if self.last_step_end_time is not None else 0
+                
                 experiences = global_experiences[:args.rollout_batch_size*chunk_size]
                 if args.enable_self_evolution:
                     with open(os.path.join(self.strategy.args.filtered_data_dir, f"keep_train_data_{steps}.jsonl"), "a", encoding="utf-8") as f:
@@ -479,6 +492,19 @@ class PPOTrainer(ABC):
                 self.save_logs_and_checkpoints(args, steps, pbar, status, client_states)
 
                 pbar.update()
+                
+                # 记录训练步骤结束时间并计算耗时
+                step_end_time = time.time()
+                step_duration = step_end_time - current_time
+                
+                # 保存时间统计信息到txt文件
+                if self.strategy.is_rank_0():
+                    timing_file_path = os.path.join(self.args.save_path, "training_timing_stats.txt")
+                    os.makedirs(os.path.dirname(timing_file_path), exist_ok=True)
+                    with open(timing_file_path, "a", encoding="utf-8") as f:
+                        f.write(f"{steps},{step_interval:.6f},{step_duration:.6f}\n")
+                
+                self.last_step_end_time = step_end_time
                 steps = steps + 1
 
                 if args.enable_self_evolution:
@@ -492,9 +518,13 @@ class PPOTrainer(ABC):
                 # if len(self.replay_buffer) % args.n_samples_per_prompt != 0:
                 #     breakpoint()
 
+
+        
         self.logger.finish()
         if self._tensorboard is not None and self.strategy.is_rank_0():
             self._tensorboard.close()
+
+
 
     def ppo_train(self, global_steps):
         status = {}
