@@ -2,3 +2,4 @@ torch==2.6.0
 math-verify[antlr4_13_2]
 vllm==0.8.4
 rouge_score
+debugpy

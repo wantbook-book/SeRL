@@ -12,7 +12,6 @@ def preprocess_data(data, input_template=None, input_key="input", label_key=None
         prompt = data[input_key]
         if input_template:
             prompt = input_template.format(prompt)
-
     # for Reinforced Fine-tuning
     label = "" if label_key is None else data.get(label_key, data.get('solution', None))
     assert label is not None, f"label_key: {label_key} not found in data: {data}"
@@ -57,7 +56,7 @@ class PromptDataset(Dataset):
             prompt, label = preprocess_data(data, input_template, input_key, label_key, apply_chat_template)
             other_info = {
                 'idx': data.get('idx', data.get('id', None)),
-                'level': data.get('level', 'default_level'),               
+                'level': data.get('level', 0),               
             }
             self.prompts.append(prompt)
             self.labels.append(label)

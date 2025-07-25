@@ -207,6 +207,16 @@ if __name__ == "__main__":
         default="prm_%s" % datetime.now().strftime("%m%dT%H:%M"),
     )
 
+    # swanlab parameters
+    parser.add_argument("--use_swanlab", type=str, default=None)
+    parser.add_argument("--swanlab_workspace", type=str, default=None)
+    parser.add_argument("--swanlab_project", type=str, default="openrlhf_train_prm")
+    parser.add_argument(
+        "--swanlab_run_name",
+        type=str,
+        default="prm_%s" % datetime.now().strftime("%m%dT%H:%M"),
+    )
+
     # ModelScope parameters
     parser.add_argument("--use_ms", action="store_true", default=False)
 

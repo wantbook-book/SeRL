@@ -404,6 +404,16 @@ if __name__ == "__main__":
         default="ppo_%s" % datetime.now().strftime("%m%dT%H:%M"),
     )
 
+    # swanlab parameters
+    parser.add_argument("--use_swanlab", type=str, default=None)
+    parser.add_argument("--swanlab_workspace", type=str, default=None)
+    parser.add_argument("--swanlab_project", type=str, default="openrlhf_train_ppo")
+    parser.add_argument(
+        "--swanlab_run_name",
+        type=str,
+        default="ppo_%s" % datetime.now().strftime("%m%dT%H:%M"),
+    )
+
     # TensorBoard parameters
     parser.add_argument("--use_tensorboard", type=str, default=None, help="TensorBoard logging path")
 

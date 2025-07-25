@@ -140,10 +140,30 @@ def append_codes(file_path, output_path, origin_data_file):
             f.write(json.dumps(entry) + '\n')
     exit()
 
+def append_problem_prefix(file_path, output_path):
+    data_list = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            entry = json.loads(line)
+            entry['problem'] = entry['problem'].strip() + "\nPlease reason step by step, and put your final answer within \\boxed{}."
+            data_list.append(entry)
+    
+    with open(output_path, 'w') as f:
+        for entry in data_list:
+            f.write(json.dumps(entry) + '\n')
+    exit()
+
 
 if __name__ == "__main__":
-    # file_path = "/xxx/SEO/openrlhf/dataset/math/numina_math_cot_train.jsonl"
-    # output_path = "/xxx/SEO/openrlhf/dataset/math/numina_math_cot_train_with_idx.jsonl"
+    file_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx.jsonl"
+    output_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx_reason_prefix.jsonl"
+    append_problem_prefix(
+        file_path=file_path,
+        output_path=output_path
+    )
+
+    # file_path = "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/data/aime24/test.jsonl"
+    # output_path = "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/data/aime24/test_with_idx.jsonl"
     # append_idx(
     #     file_path=file_path,
     #     output_path=output_path

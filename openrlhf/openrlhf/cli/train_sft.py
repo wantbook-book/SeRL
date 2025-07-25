@@ -245,6 +245,12 @@ if __name__ == "__main__":
         default="sft_%s" % datetime.now().strftime("%m%dT%H:%M"),
     )
 
+    # SwanLab parameters
+    parser.add_argument("--use_swanlab", type=str, default=None, help="SwanLab API key or True to enable")
+    parser.add_argument("--swanlab_workspace", type=str, default=None, help="SwanLab workspace name")
+    parser.add_argument("--swanlab_project", type=str, default=None, help="SwanLab project name (defaults to wandb_project)")
+    parser.add_argument("--swanlab_run_name", type=str, default=None, help="SwanLab experiment name (defaults to wandb_run_name)")
+
     # TensorBoard parameters
     parser.add_argument("--use_tensorboard", type=str, default=None, help="TensorBoard logging path")
 

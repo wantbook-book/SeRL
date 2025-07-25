@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from openrlhf.models import GPTLMLoss, KDLoss
 from openrlhf.utils.distributed_sampler import DistributedSampler
+from openrlhf.utils.logger import UnifiedLogger
 
 
 class KDTrainer(ABC):
@@ -60,36 +61,26 @@ class KDTrainer(ABC):
         self.loss_fn = GPTLMLoss()
         self.kd_loss = KDLoss()
 
-        # wandb/tensorboard setting
-        self._wandb = None
-        self._tensorboard = None
-        if self.strategy.args.use_wandb and self.strategy.is_rank_0():
-            import wandb
-
-            self._wandb = wandb
-            if not wandb.api.api_key:
-                wandb.login(key=strategy.args.use_wandb)
-            wandb.init(
-                entity=strategy.args.wandb_org,
-                project=strategy.args.wandb_project,
-                group=strategy.args.wandb_group,
-                name=strategy.args.wandb_run_name,
-                config=strategy.args.__dict__,
-                reinit=True,
-            )
-
-            wandb.define_metric("train/global_step")
-            wandb.define_metric("train/*", step_metric="train/global_step", step_sync=True)
-            wandb.define_metric("eval/global_step")
-            wandb.define_metric("eval/*", step_metric="eval/global_step", step_sync=True)
-
-        # Initialize TensorBoard writer if wandb is not available
-        if self.strategy.args.use_tensorboard and self._wandb is None and self.strategy.is_rank_0():
-            from torch.utils.tensorboard import SummaryWriter
-
-            os.makedirs(self.strategy.args.use_tensorboard, exist_ok=True)
-            log_dir = os.path.join(self.strategy.args.use_tensorboard, strategy.args.wandb_run_name)
-            self._tensorboard = SummaryWriter(log_dir=log_dir)
+        # Initialize unified logger
+        self.logger = UnifiedLogger(
+            use_wandb=strategy.args.use_wandb,
+            wandb_org=getattr(strategy.args, 'wandb_org', None),
+            wandb_project=getattr(strategy.args, 'wandb_project', None),
+            wandb_group=getattr(strategy.args, 'wandb_group', None),
+            wandb_run_name=getattr(strategy.args, 'wandb_run_name', None),
+            use_swanlab=getattr(strategy.args, 'use_swanlab', False),
+            swanlab_workspace=getattr(strategy.args, 'swanlab_workspace', None),
+            swanlab_project=getattr(strategy.args, 'swanlab_project', None),
+            swanlab_run_name=getattr(strategy.args, 'swanlab_run_name', None),
+            use_tensorboard=strategy.args.use_tensorboard,
+            tensorboard_log_dir=getattr(strategy.args, 'use_tensorboard', None),
+            tensorboard_run_name=getattr(strategy.args, 'wandb_run_name', None),
+            config=strategy.args.__dict__,
+            is_rank_0=strategy.is_rank_0()
+        )
+        
+        # Keep backward compatibility
+        self._wandb, self._tensorboard = self.logger.get_loggers()
 
     def fit(self, args, consumed_samples=0, num_update_steps_per_epoch=None):
         # get eval and save steps
@@ -175,22 +166,14 @@ class KDTrainer(ABC):
 
             epoch_bar.update()
 
-        if self._wandb is not None and self.strategy.is_rank_0():
-            self._wandb.finish()
-        if self._tensorboard is not None and self.strategy.is_rank_0():
-            self._tensorboard.close()
+        self.logger.finish()
 
     # logs/checkpoints/evaluation
     def save_logs_and_checkpoints(self, args, global_step, step_bar, logs_dict={}, client_states={}):
         if global_step % args.logging_steps == 0:
-            # wandb
-            if self._wandb is not None and self.strategy.is_rank_0():
-                logs = {"train/%s" % k: v for k, v in {**logs_dict, "global_step": global_step}.items()}
-                self._wandb.log(logs)
-            # TensorBoard
-            elif self._tensorboard is not None and self.strategy.is_rank_0():
-                for k, v in logs_dict.items():
-                    self._tensorboard.add_scalar(f"train/{k}", v, global_step)
+            if self.logger.is_available():
+                logs = {"train/%s" % k: v for k, v in logs_dict.items()}
+                self.logger.log(logs, step=global_step)
 
         # eval
         if global_step % args.eval_steps == 0 and self.eval_dataloader is not None:
@@ -243,12 +226,8 @@ class KDTrainer(ABC):
                 logs = self.strategy.all_reduce(bar_dict)
                 step_bar.set_postfix(logs)
 
-            if self.strategy.is_rank_0():
-                if self._wandb is not None:
-                    logs = {"eval/%s" % k: v for k, v in {**logs, "global_step": steps}.items()}
-                    self._wandb.log(logs)
-                elif self._tensorboard is not None:
-                    for k, v in logs.items():
-                        self._tensorboard.add_scalar(f"eval/{k}", v, steps)
+            if self.logger.is_available():
+                eval_logs = {"eval/%s" % k: v for k, v in logs.items()}
+                self.logger.log(eval_logs, step=steps)
 
         self.model.train()  # reset model state

@@ -94,36 +94,9 @@ class PPOTrainer(ABC):
 
         self.prepare_datasets()
 
-        # wandb/tensorboard setting
-        self._wandb = None
-        self._tensorboard = None
-        if self.strategy.args.use_wandb:
-            import wandb
-
-            self._wandb = wandb
-            if not wandb.api.api_key:
-                wandb.login(key=self.strategy.args.use_wandb)
-            wandb.init(
-                entity=self.strategy.args.wandb_org,
-                project=self.strategy.args.wandb_project,
-                group=self.strategy.args.wandb_group,
-                name=self.strategy.args.wandb_run_name,
-                config=self.strategy.args.__dict__,
-                reinit=True,
-            )
-
-            wandb.define_metric("train/global_step")
-            wandb.define_metric("train/*", step_metric="train/global_step", step_sync=True)
-            wandb.define_metric("eval/epoch")
-            wandb.define_metric("eval/*", step_metric="eval/epoch", step_sync=True)
-
-        # Initialize TensorBoard writer if wandb is not available
-        if self.strategy.args.use_tensorboard and self._wandb is None:
-            from torch.utils.tensorboard import SummaryWriter
-
-            os.makedirs(self.strategy.args.use_tensorboard, exist_ok=True)
-            log_dir = os.path.join(self.strategy.args.use_tensorboard, self.strategy.args.wandb_run_name)
-            self._tensorboard = SummaryWriter(log_dir=log_dir)
+        # 统一日志记录器设置
+        from ..utils.logger import UnifiedLogger
+        self.logger = UnifiedLogger(strategy.args, self.strategy.is_rank_0())
         
         self.dynamic_sampling_cnt = 0
 
@@ -519,8 +492,7 @@ class PPOTrainer(ABC):
                 # if len(self.replay_buffer) % args.n_samples_per_prompt != 0:
                 #     breakpoint()
 
-        if self._wandb is not None and self.strategy.is_rank_0():
-            self._wandb.finish()
+        self.logger.finish()
         if self._tensorboard is not None and self.strategy.is_rank_0():
             self._tensorboard.close()
 
@@ -571,20 +543,10 @@ class PPOTrainer(ABC):
 
     def save_logs_and_checkpoints(self, args, global_step, step_bar, logs_dict={}, client_states={}):
         if global_step % args.logging_steps == 0:
-            # wandb
-            if self._wandb is not None and self.strategy.is_rank_0():
-                logs = {
-                    "train/%s" % k: v
-                    for k, v in {
-                        **logs_dict,
-                        "global_step": global_step,
-                    }.items()
-                }
-                self._wandb.log(logs)
-            # TensorBoard
-            elif self._tensorboard is not None and self.strategy.is_rank_0():
-                for k, v in logs_dict.items():
-                    self._tensorboard.add_scalar(f"train/{k}", v, global_step)
+            # 统一日志记录
+            if self.logger.is_available():
+                logs = {"train/%s" % k: v for k, v in logs_dict.items()}
+                self.logger.log(logs, step=global_step)
 
         # TODO: Add evaluation mechanism for PPO
         if global_step % args.eval_steps == 0 and self.eval_dataloader and len(self.eval_dataloader) > 0:
@@ -711,13 +673,10 @@ class PPOTrainer(ABC):
                 logs[f"eval_{datasource}_pass1"] = metrics["pass1"] / metrics["count"]
             for level in level2acc:
                 logs[f"eval_{level}_pass1"] = level2acc[level] / level2cnt[level]
-            # Log to wandb/tensorboard
-            if self._wandb is not None:
-                logs = {"eval/%s" % k: v for k, v in {**logs, "global_step": global_step}.items()}
-                self._wandb.log(logs)
-            elif self._tensorboard is not None:
-                for k, v in logs.items():
-                    self._tensorboard.add_scalar(f"eval/{k}", v, global_step)
+            # 统一日志记录
+            if self.logger.is_available():
+                eval_logs = {"eval/%s" % k: v for k, v in logs.items()}
+                self.logger.log(eval_logs, step=global_step)
 
         if self.strategy.args.vllm_enable_sleep:
             batch_vllm_engine_call(self.vllm_engines, "sleep")
