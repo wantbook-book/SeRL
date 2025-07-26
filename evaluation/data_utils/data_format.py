@@ -153,14 +153,62 @@ def append_problem_prefix(file_path, output_path):
             f.write(json.dumps(entry) + '\n')
     exit()
 
+def format_med_data_to_train(input_file, output_file):
+    """
+    将医学问答数据转换为训练格式
+    
+    Args:
+        input_file: 输入的医学问答JSONL文件路径
+        output_file: 输出的训练格式JSONL文件路径
+    """
+    data_list = []
+    idx = 0
+    
+    with open(input_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            entry = json.loads(line)
+            
+            # 获取问题和选项
+            question = entry.get('question', '')
+            options = entry.get('options', {})
+            answer_idx = entry.get('answer_idx', '')
+            
+            # 格式化选项文本
+            options_text = '\n'.join([f"{key}: {value}" for key, value in options.items()])
+            
+            # 构建问题格式
+            problem = f"Question: {question}\n\nOptions:\n{options_text}\n\nPlease analyze this medical question step by step and put your final answer option (A, B, C, D, or E) within \\boxed{{}}"
+            
+            # 构建输出条目
+            output_entry = {
+                "idx": idx,
+                "problem": problem,
+                "answer": answer_idx
+            }
+            
+            data_list.append(output_entry)
+            idx += 1
+    
+    # 保存到输出文件
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for entry in data_list:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    
+    print(f"成功转换 {len(data_list)} 条数据到 {output_file}")
+    exit()
+
 
 if __name__ == "__main__":
-    file_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx.jsonl"
-    output_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx_reason_prefix.jsonl"
-    append_problem_prefix(
-        file_path=file_path,
-        output_path=output_path
-    )
+    input_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/test.jsonl"
+    output_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/test_format.jsonl"
+    format_med_data_to_train(input_file, output_file)
+
+    # file_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx.jsonl"
+    # output_path = "/pubshare/fwk/code/SeRL/openrlhf/dataset/math/covo_train_with_idx_reason_prefix.jsonl"
+    # append_problem_prefix(
+    #     file_path=file_path,
+    #     output_path=output_path
+    # )
 
     # file_path = "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/data/aime24/test.jsonl"
     # output_path = "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/data/aime24/test_with_idx.jsonl"

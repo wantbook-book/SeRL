@@ -80,6 +80,7 @@ def process_answers(input_list: list[dict], gold_is_latex: bool) -> Union[list[d
     """Process each answer through the sympy extraction workflow and compare with gold using math_verify."""
     results = []
     correct_count = 0
+    avg_correct_count = 0
     total_count = 0
     
     # Create the verification function
@@ -92,61 +93,86 @@ def process_answers(input_list: list[dict], gold_is_latex: bool) -> Union[list[d
     )
     output_list = []
     for item in input_list:
-        extracted_answers = None
-        gold_answers = None
-        grade = 0
-        try:
-            # Use the verification function
-            # grade, extracted_answers = verify_func(["\\boxed{"+item['answer']+"}"], [item['code'][0]])
-            grade, extracted_answers = verify_func([item['answer']], [item['code'][0]])
-            # grade, extracted_answers = verify_func([item['solution']], [item['code'][0]])
-            if extracted_answers is None:
-                extracted_answers = None
-                gold_answers = None
-            else:
-                gold_answers = extracted_answers[0]
-                extracted_answers = extracted_answers[1]
-            
-            if grade != 1:
-                grade, extracted_answers = verify_func([item['code'][0]], [item['answer']])
-            if extracted_answers is None:
-                extracted_answers = None
-                gold_answers = None
-            else:
-                gold_answers = extracted_answers[1]
-                extracted_answers = extracted_answers[0]
+        # Evaluate all responses in the code list
+        code_responses = item.get('code', [])
+        if not isinstance(code_responses, list):
+            code_responses = [code_responses]
+        
+        item_results = []
+        item_correct = False
+        
+        for i, code_response in enumerate(code_responses):
+            extracted_answers = None
+            gold_answers = None
+            grade = 0
+            try:
+                # Use the verification function
+                grade, extracted_answers = verify_func([item['answer']], [code_response])
+                if extracted_answers is None:
+                    extracted_answers = None
+                    gold_answers = None
+                else:
+                    gold_answers = extracted_answers[0]
+                    extracted_answers = extracted_answers[1]
+                
+                if grade != 1:
+                    grade, extracted_answers = verify_func([code_response], [item['answer']])
+                if extracted_answers is None:
+                    extracted_answers = None
+                    gold_answers = None
+                else:
+                    gold_answers = extracted_answers[1]
+                    extracted_answers = extracted_answers[0]
 
-            total_count += 1
-            if grade == 1:
-                correct_count += 1
-            
-            item['extracted_answer'] = [extracted_answers]
-            item['extracted_gold'] = [gold_answers]
-            item['is_correct'] = grade == 1
-            output_list.append(item)
-            
-        except Exception as e:
-            item['extracted_answer'] = [extracted_answers]
-            item['extracted_gold'] = [gold_answers]
-            item['is_correct'] = grade == 1
-            item['error'] = str(e)
-            output_list.append(item)
+                is_correct = grade == 1
+                if is_correct:
+                    item_correct = True
+                
+                response_result = {
+                    'response_index': i,
+                    'extracted_answer': extracted_answers,
+                    'is_correct': is_correct,
+                }
+                item_results.append(response_result)
+                
+            except Exception as e:
+                response_result = {
+                    'response_index': i,
+                    'extracted_answer': extracted_answers,
+                    'is_correct': False,
+                    'error': str(e)
+                }
+                item_results.append(response_result)
+        
+        total_count += 1
+        if item_results[0]['is_correct']:
+            correct_count += 1
+        
+        # Add evaluation results to the item
+        item['code_evaluations'] = item_results
+        item['any_correct'] = any(r['is_correct'] for r in item_results)
+        item['num_responses'] = len(code_responses)
+        item['num_correct'] = sum(1 for r in item_results if r['is_correct'])
+        avg_correct_count += item['num_correct'] / item['num_responses']
+        output_list.append(item)
 
     # Calculate accuracy
     accuracy = correct_count / total_count if total_count > 0 else 0
+    avg_accuracy = avg_correct_count / total_count if total_count > 0 else 0
     print(f"\nEvaluation Results:")
     print(f"Total examples: {total_count}")
     print(f"Correct answers: {correct_count}")
     print(f"Accuracy: {accuracy:.2%}")
+    print(f"Average accuracy: {avg_accuracy:.2%}")
     
     # Add summary stats to the dataframe
     result = {
         'accuracy': accuracy,
+        'avg_accuracy': avg_accuracy,
         'total_count': total_count,
         'correct_count': correct_count
     }
     return output_list, result
-
 def main():
     args = parse_args()
     

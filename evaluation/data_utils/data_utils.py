@@ -156,6 +156,72 @@ def sample_data(data_path, output_path, sample_num):
     print(f"sampled data size: {[len(sample_level2data[level]) for level in sample_level2data]}")
     exit()
 
+def sample_med_qa_data(data_path, output_path, sample_num):
+    """
+    从medqa数据文件中提取指定数量的数据样本。
+    从step1题目中随机提取sample_num/2数量，从step2&3随机提取sample_num/2数量。
+    
+    Args:
+        data_path: 输入的medqa jsonl文件路径
+        output_path: 输出文件路径
+        sample_num: 总采样数量
+    """
+    # 设置随机种子
+    random.seed(42)
+    
+    # 按meta_info分类存储数据
+    step1_data = []
+    step2_3_data = []
+    
+    # 读取数据并分类
+    with open(data_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                item = json.loads(line.strip())
+                meta_info = item.get('meta_info', '')
+                if meta_info == 'step1':
+                    step1_data.append(item)
+                elif meta_info == 'step2&3':
+                    step2_3_data.append(item)
+    
+    print(f"总数据量: step1={len(step1_data)}, step2&3={len(step2_3_data)}")
+    
+    # 计算每类需要采样的数量
+    each_type_sample_size = sample_num // 2
+    
+    # 从每类中随机采样
+    sampled_step1 = random.sample(step1_data, min(each_type_sample_size, len(step1_data)))
+    sampled_step2_3 = random.sample(step2_3_data, min(each_type_sample_size, len(step2_3_data)))
+    
+    # 如果某一类数据不足，从另一类补充
+    total_sampled = len(sampled_step1) + len(sampled_step2_3)
+    if total_sampled < sample_num:
+        remaining_needed = sample_num - total_sampled
+        if len(sampled_step1) < each_type_sample_size and len(step2_3_data) > len(sampled_step2_3):
+            # step1不足，从step2&3补充
+            remaining_step2_3 = [item for item in step2_3_data if item not in sampled_step2_3]
+            additional_step2_3 = random.sample(remaining_step2_3, min(remaining_needed, len(remaining_step2_3)))
+            sampled_step2_3.extend(additional_step2_3)
+        elif len(sampled_step2_3) < each_type_sample_size and len(step1_data) > len(sampled_step1):
+            # step2&3不足，从step1补充
+            remaining_step1 = [item for item in step1_data if item not in sampled_step1]
+            additional_step1 = random.sample(remaining_step1, min(remaining_needed, len(remaining_step1)))
+            sampled_step1.extend(additional_step1)
+    
+    # 合并采样结果
+    all_sampled_data = sampled_step1 + sampled_step2_3
+    
+    # 随机打乱顺序
+    random.shuffle(all_sampled_data)
+    
+    # 输出到文件
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for item in all_sampled_data:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+    
+    print(f"采样完成: step1={len(sampled_step1)}, step2&3={len(sampled_step2_3)}, 总计={len(all_sampled_data)}")
+    print(f"输出文件: {output_path}")
+    return len(all_sampled_data)
 
 def merge_files(input_files: list[str], output_file: str):
     """
@@ -320,6 +386,66 @@ def mmlu_pro_acc(input_file):
     else:
         print("No match found")
 
+
+
+def extract_correct_answers(input_file, output_file):
+    """
+    从examples.jsonl文件中提取每个问题的正确答案。
+    根据code_evaluations中的is_correct字段判断哪个回答是正确的，
+    如果所有回答都错误则使用solution字段。
+    
+    Args:
+        input_file: 输入的examples.jsonl文件路径
+        output_file: 输出的jsonl文件路径，包含instruction、input、output字段
+    """
+    data_list = []
+    
+    with open(input_file, 'r') as f:
+        for line in f:
+            entry = json.loads(line)
+            
+            # 获取问题
+            question = entry.get("question", "")
+            if not question:
+                continue
+                
+            # 查找第一个正确的回答
+            correct_answer = None
+            code_evaluations = entry.get("code_evaluations", [])
+            code_responses = entry.get("code", [])
+            
+            # 遍历评估结果，找到第一个正确的回答
+            for eval_item in code_evaluations:
+                if eval_item.get("is_correct", False):
+                    response_index = eval_item.get("response_index", -1)
+                    if response_index == -1:
+                        continue
+                    if response_index < len(code_responses):
+                        correct_answer = code_responses[response_index]
+                        break
+            
+            # 如果没有找到正确答案，使用solution字段
+            if correct_answer is None:
+                correct_answer = entry.get("solution", "")
+            
+            # 构建输出数据
+            if correct_answer:
+                data_item = {
+                    "instruction": question,
+                    "input": "",
+                    "output": correct_answer
+                }
+                data_list.append(data_item)
+    
+    # 保存到输出文件
+    with open(output_file, 'w') as f:
+        for entry in data_list:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    
+    print(f"提取了 {len(data_list)} 个正确答案，保存到 {output_file}")
+    exit()
+
+
 def merge_maj_reward_to_rule_self_reward(maj_file, rule_self_file, output_file):
     # maj_data = []
     idx2majdata = {}
@@ -349,6 +475,11 @@ def merge_maj_reward_to_rule_self_reward(maj_file, rule_self_file, output_file):
     exit()
 
 if __name__ == "__main__":
+    input_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train.jsonl"
+    output_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train_500seed.jsonl"
+    sample_num = 500
+    sample_med_qa_data(input_file, output_file, sample_num)
+
     # maj_file = "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_16/math_500/qwen25_7b_maj_eval.jsonl"
     # rule_self_file = "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_16/math_500/test_pure_-1_seed0_t1.0_s0_e-1_with_self_math_reward_with_rule_reward.jsonl"
     # output_file = "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_16/math_500/qwen25_7b_math500_with_self_math_reward_with_rule_reward_maj_eval.jsonl"
@@ -361,13 +492,13 @@ if __name__ == "__main__":
     # input_file = "/xxx/SEO/MMLU-Pro/eval_results/summary/qwen25_7B-origin_7_5k_random_bon_gt_bs16-CoT-all_05-02_03-35_summary.txt"
     # mmlu_pro_acc(input_file)
 
-    math_eval_dir = Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
-    data_subdirs = [
-        'math_500', 'math_hard', 'asdiv', 'college_math', 'tabmwp'
-        # 'asdiv', 'carp_en', 'college_math', 'gaokao2023en', 'mawps', 
-        # 'minerva_math', 'mmlu_stem', 'olympiadbench', 'svamp', 'tabmwp'
-    ]
-    print_eval_data_acc(math_eval_dir, data_subdirs)
+    # math_eval_dir = Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
+    # data_subdirs = [
+    #     'math_500', 'math_hard', 'asdiv', 'college_math', 'tabmwp'
+    #     # 'asdiv', 'carp_en', 'college_math', 'gaokao2023en', 'mawps', 
+    #     # 'minerva_math', 'mmlu_stem', 'olympiadbench', 'svamp', 'tabmwp'
+    # ]
+    # print_eval_data_acc(math_eval_dir, data_subdirs)
 
     # input_files = [
     #     "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_32/gsm8k/test_pure_-1_seed0_t1.0_s0_e-1_maj_eval.jsonl",

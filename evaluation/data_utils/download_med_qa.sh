@@ -1,0 +1,3 @@
+python download_data.py --download_raw --repo_id bigbio/med_qa --output_dir /pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa
+python download_data.py --download_raw --repo_id qiaojin/PubMedQA --output_dir /pubshare/fwk/code/SeRL/evaluation/Health/dataset/PubMedQA
+python download_data.py --download_raw --repo_id SeanWu25/NEJM-AI_Benchmarking_Medical_Language_Models --output_dir /pubshare/fwk/code/SeRL/evaluation/Health/dataset/nephsap
