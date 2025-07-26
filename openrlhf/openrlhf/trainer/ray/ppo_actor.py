@@ -14,7 +14,7 @@ from tqdm import tqdm
 from transformers.trainer import get_scheduler
 
 from openrlhf.models import Actor, PolicyLoss
-from openrlhf.models.utils import compute_approx_kl, masked_mean
+from openrlhf.models.utils import compute_approx_kl, masked_mean, compute_entropy
 from openrlhf.trainer.ppo_utils.experience_maker import Experience
 from openrlhf.utils import get_tokenizer
 from openrlhf.utils.deepspeed import DeepspeedStrategy
@@ -222,6 +222,15 @@ class ActorPPOTrainer(ABC):
             ring_attn_group=self.strategy.ring_attn_group,
             packed_seq_lens=packed_seq_lens,
         )
+        
+        # compute entropy from logits
+        entropy = compute_entropy(
+            output.logits[:, -action_mask.shape[1]:],  # only consider action tokens
+            action_mask,
+            temperature=self.actor.temperature
+        )
+        entropy_mean = entropy.mean()
+        experience.info["entropy"] = entropy_mean.item()
 
         # loss function
         actor_loss = self.actor_loss_fn(
@@ -266,6 +275,8 @@ class ActorPPOTrainer(ABC):
                 status[k] = (
                     (v * experience.info["response_length"]).sum() / experience.info["response_length"].sum()
                 ).item()
+            elif k == "entropy":
+                status[k] = v  # entropy is already a scalar
             else:
                 status[k] = v.mean().item()
         return status

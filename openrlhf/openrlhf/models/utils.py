@@ -122,6 +122,38 @@ def masked_normalize(tensor: torch.Tensor, mask: torch.Tensor, dim: int = 1, eps
     return mean_centered * var.clamp(min=eps).rsqrt()
 
 
+def compute_entropy(logits: torch.Tensor, action_mask: Optional[torch.Tensor] = None, temperature: float = 1.0) -> torch.Tensor:
+    """
+    Compute the entropy of the action distribution from logits.
+    
+    Args:
+        logits: Model logits tensor of shape (batch_size, seq_len, vocab_size)
+        action_mask: Optional mask for valid action positions
+        temperature: Temperature for scaling logits
+    
+    Returns:
+        entropy: Entropy tensor
+    """
+    if temperature != 1.0:
+        logits = logits / temperature
+    
+    # Compute log probabilities
+    log_probs = F.log_softmax(logits, dim=-1)
+    # Compute probabilities
+    probs = F.softmax(logits, dim=-1)
+    
+    # Compute entropy: -sum(p * log(p))
+    entropy = -(probs * log_probs).sum(dim=-1)
+    
+    # Apply action mask if provided
+    if action_mask is not None:
+        entropy = masked_mean(entropy, action_mask, dim=-1)
+    else:
+        entropy = entropy.mean(dim=-1)
+    
+    return entropy
+
+
 def process_sequences(sequences: torch.Tensor, input_len, eos_token_id, pad_token_id):
     """
     Process generated sequences to create attention masks and action masks.
