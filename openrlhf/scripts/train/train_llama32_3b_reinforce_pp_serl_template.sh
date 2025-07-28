@@ -35,7 +35,7 @@ ray job submit --address="http://127.0.0.1:8265" \
    --bf16 \
    --actor_learning_rate 5e-7 \
    --critic_learning_rate 9e-6 \
-   --init_kl_coef 1e-3 \
+   --init_kl_coef 1e-4 \
    --prompt_data /path/to/your/SeRL/openrlhf/dataset/math/0_2_0_8_train_with_idx_sample_500.jsonl \
    --input_key problem \
    --label_key answer \
