@@ -10,10 +10,10 @@ import time
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_file", default="./dataset/med_qa/test.jsonl", type=str, help="Path to the medical QA data file")
+    parser.add_argument("--data_file", default="./dataset/med_qa/test.jsonl", type=str, help="Path to the medical QA data file (supports MedQA and PubMedQA formats)")
     parser.add_argument("--model_name_or_path", default="gpt-4", type=str)
     parser.add_argument("--output_dir", default="./outputs", type=str)
-    parser.add_argument("--prompt_type", default="medical_qa", type=str)
+    parser.add_argument("--prompt_type", default="medical_qa", type=str, help="Type of prompt to use (medical_qa or pubmedqa)")
     parser.add_argument("--num_test_sample", default=-1, type=int)  # -1 for full data
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--start", default=0, type=int)
@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument("--pipeline_parallel_size", type=int, default=1)
     parser.add_argument("--prompt_file", default="", type=str)
     parser.add_argument("--include_options", action="store_true", help="Include answer options in the prompt")
+    parser.add_argument("--dataset_type", default="medqa", type=str, choices=["medqa", "pubmedqa", "nephsap"], help="Type of dataset: medqa, pubmedqa, or nephsap")
 
     args = parser.parse_args()
     args.top_p = (
@@ -71,6 +72,56 @@ def construct_medical_prompt(example, args):
     
     return prompt
 
+def construct_pubmedqa_prompt(example, args):
+    """Construct prompt for PubMedQA"""
+    question = example["question"]
+    context = example.get("context", "")
+    
+    if context:
+        prompt = f"Context: {context}\n\nQuestion: {question}\n\nBased on the provided context, please answer the question. Your answer should be one of: yes, no, or maybe. Please analyze the question step by step and put your final answer (yes, no, or maybe) within \\boxed{{}}."
+    else:
+        prompt = f"Question: {question}\n\nPlease answer the question. Your answer should be one of: yes, no, or maybe. Please analyze the question step by step and put your final answer (yes, no, or maybe) within \\boxed{{}}."
+    
+    return prompt
+
+def extract_pubmedqa_answer(generated_text):
+    """Extract yes/no/maybe answer from PubMedQA response"""
+    import re
+    
+    # First try to extract from \boxed{}
+    boxed_pattern = r'\\boxed\{([^}]+)\}'
+    boxed_matches = re.findall(boxed_pattern, generated_text, re.IGNORECASE)
+    
+    if boxed_matches:
+        answer = boxed_matches[-1].strip().lower()
+        if answer in ['yes', 'no', 'maybe']:
+            return answer
+    
+    # If no boxed answer found, look for explicit yes/no/maybe in the text
+    text_lower = generated_text.lower()
+    
+    # Look for patterns like "the answer is yes", "answer: no", etc.
+    answer_patterns = [
+        r'(?:the )?answer (?:is |: ?)(yes|no|maybe)',
+        r'(?:final )?(?:answer|conclusion) (?:is |: ?)(yes|no|maybe)',
+        r'\b(yes|no|maybe)\b(?:\.|$|\s*$)'
+    ]
+    
+    for pattern in answer_patterns:
+        matches = re.findall(pattern, text_lower)
+        if matches:
+            return matches[-1]
+    
+    # If still no clear answer, return the most likely based on keywords
+    # if 'yes' in text_lower and 'no' not in text_lower:
+    #     return 'yes'
+    # elif 'no' in text_lower and 'yes' not in text_lower:
+    #     return 'no'
+    # elif 'maybe' in text_lower or 'uncertain' in text_lower or 'unclear' in text_lower:
+    #     return 'maybe'
+    
+    return ''  # Default fallback
+
 def prepare_data(args):
     """Prepare medical QA data"""
     # Load data
@@ -96,7 +147,13 @@ def prepare_data(args):
     # Generate output file name
     dt_string = datetime.now().strftime("%m-%d_%H-%M")
     model_name = "/".join(args.model_name_or_path.split("/")[-2:])
-    out_file_prefix = f"medical_qa_{args.prompt_type}_{args.num_test_sample}_seed{args.seed}_t{args.temperature}"
+    # Generate output file name based on dataset type or prompt type
+    if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+        out_file_prefix = f"pubmedqa_{args.prompt_type}_{args.num_test_sample}_seed{args.seed}_t{args.temperature}"
+    elif args.dataset_type == "nephsap":
+        out_file_prefix = f"nephsap_{args.prompt_type}_{args.num_test_sample}_seed{args.seed}_t{args.temperature}"
+    else:
+        out_file_prefix = f"medical_qa_{args.prompt_type}_{args.num_test_sample}_seed{args.seed}_t{args.temperature}"
     if args.prompt_file:
         out_file_prefix += f"_pf_{args.prompt_file.split('/')[-1].replace('.txt', '')}"
     
@@ -108,18 +165,32 @@ def prepare_data(args):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
     
-    out_file = f"{output_dir}/med_qa/{out_file_prefix}_s{args.start}_e{args.end}.jsonl"
-    os.makedirs(f"{output_dir}/med_qa", exist_ok=True)
+    # Determine output subdirectory based on dataset type or prompt type
+    if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+        output_subdir = "pubmedqa"
+    elif args.dataset_type == "nephsap":
+        output_subdir = "nephsap"
+    else:
+        output_subdir = "med_qa"
+    out_file = f"{output_dir}/{output_subdir}/{out_file_prefix}_s{args.start}_e{args.end}.jsonl"
+    os.makedirs(f"{output_dir}/{output_subdir}", exist_ok=True)
     
     # Load processed samples if not overwriting
     processed_samples = []
     if not args.overwrite:
-        processed_files = [
-            f for f in os.listdir(f"{output_dir}/med_qa/")
-            if f.endswith(".jsonl") and f.startswith(out_file_prefix)
-        ]
-        for f in processed_files:
-            processed_samples.extend(load_jsonl(f"{output_dir}/med_qa/{f}"))
+        if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+            output_subdir = "pubmedqa"
+        elif args.dataset_type == "nephsap":
+            output_subdir = "nephsap"
+        else:
+            output_subdir = "med_qa"
+        if os.path.exists(f"{output_dir}/{output_subdir}/"):
+            processed_files = [
+                f for f in os.listdir(f"{output_dir}/{output_subdir}/")
+                if f.endswith(".jsonl") and f.startswith(out_file_prefix)
+            ]
+            for f in processed_files:
+                processed_samples.extend(load_jsonl(f"{output_dir}/{output_subdir}/{f}"))
     
     # Remove duplicates
     processed_samples = {sample["idx"]: sample for sample in processed_samples}
@@ -167,7 +238,15 @@ def main():
     examples, processed_samples, out_file = prepare_data(args)
     
     print("=" * 50)
-    print(f"Medical QA Data: {args.data_file}")
+    if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+        dataset_name = "PubMedQA"
+    elif args.dataset_type == "nephsap":
+        dataset_name = "NephSAP"
+    else:
+        dataset_name = "Medical QA"
+    print(f"{dataset_name} Data: {args.data_file}")
+    print(f"Dataset Type: {args.dataset_type}")
+    print(f"Prompt Type: {args.prompt_type}")
     print(f"Remaining samples: {len(examples)}")
     if len(examples) > 0:
         print("Sample example:")
@@ -180,8 +259,12 @@ def main():
         question = example["question"]
         answer = example["answer"]
         
-        # Construct prompt
-        full_prompt = construct_medical_prompt(example, args)
+        # Construct prompt based on dataset type or prompt type
+        if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+            full_prompt = construct_pubmedqa_prompt(example, args)
+        else:
+            # Both medqa and nephsap use the same medical_qa prompt format
+            full_prompt = construct_medical_prompt(example, args)
         
         if args.prompt_file:
             PROMPT = read_txt(args.prompt_file)
@@ -214,7 +297,6 @@ def main():
     input_prompts = [
         sample["prompt"] for sample in samples for _ in range(args.n_sampling)
     ]
-    
     if args.apply_chat_template:
         input_prompts = [
             tokenizer.apply_chat_template(
@@ -225,8 +307,11 @@ def main():
             for prompt in input_prompts
         ]
     
-    # Setup stop words
-    stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "\n\nQuestion:"]
+    # Setup stop words based on dataset type
+    if args.prompt_type == "pubmedqa" or args.dataset_type == "pubmedqa":
+        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "\n\nQuestion:", "\n\nContext:"]
+    else:
+        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "\n\nQuestion:"]
     
     # Generate responses
     print("Starting generation...")
@@ -276,11 +361,24 @@ def main():
     for i, sample in enumerate(samples):
         code = codes[i * args.n_sampling : (i + 1) * args.n_sampling]
         sample.pop("prompt")
-        sample.update({
-            "generated_response": code,
-            "response_length": len(code[0]) if code else 0,
-            "token_count": outputs_token_counter[i * args.n_sampling] if outputs_token_counter else 0
-        })
+        
+        # For PubMedQA, extract the final answer; medqa and nephsap use standard format
+        if args.dataset_type == "pubmedqa" or args.prompt_type == "pubmedqa":
+            extracted_answer = extract_pubmedqa_answer(code[0]) if code else 'maybe'
+            sample.update({
+                "generated_response": code,
+                "extracted_answer": extracted_answer,
+                "response_length": len(code[0]) if code else 0,
+                "token_count": outputs_token_counter[i * args.n_sampling] if outputs_token_counter else 0
+            })
+        else:
+            # Both medqa and nephsap use the same output format
+            sample.update({
+                "generated_response": code,
+                "response_length": len(code[0]) if code else 0,
+                "token_count": outputs_token_counter[i * args.n_sampling] if outputs_token_counter else 0
+            })
+        
         all_samples.append(sample)
     
     # Add processed samples

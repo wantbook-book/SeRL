@@ -22,14 +22,43 @@ def load_jsonl(file_path: str) -> List[Dict]:
     return data
 
 
-def extract_answer_from_response(response: str) -> str:
+def detect_dataset_type(data: List[Dict]) -> str:
     """
-    从生成的回答中提取答案选项
-    支持多种格式：
-    1. \boxed{A}, \boxed{B} 等
-    2. "The answer is A", "The best answer is B" 等
-    3. "答案是A", "正确答案是B" 等
-    4. 直接的选项字母 A, B, C, D, E
+    检测数据集类型
+    根据数据中的字段和答案格式判断是MedQA/NephSAP还是PubMedQA
+    """
+    if not data:
+        return "unknown"
+    
+    # 检查第一个样本
+    sample = data[0]
+    
+    # 如果有extracted_answer字段且值为yes/no/maybe，则为PubMedQA
+    if 'extracted_answer' in sample:
+        extracted = sample['extracted_answer'].lower()
+        if extracted in ['yes', 'no', 'maybe']:
+            return "pubmedqa"
+    
+    # 检查answer字段
+    if 'answer' in sample:
+        answer = str(sample['answer']).lower()
+        if answer in ['yes', 'no', 'maybe']:
+            return "pubmedqa"
+    
+    # 检查answer_idx字段
+    if 'answer_idx' in sample:
+        answer_idx = str(sample['answer_idx']).upper()
+        if answer_idx in ['A', 'B', 'C', 'D', 'E']:
+            return "medqa"  # MedQA和NephSAP都使用ABCDE格式
+    
+    # 默认返回medqa
+    return "medqa"
+
+
+def extract_multiple_choice_answer(response: str) -> str:
+    """
+    从生成的回答中提取多选题答案选项 (A, B, C, D, E)
+    用于MedQA和NephSAP数据集
     """
     if not response:
         return ""
@@ -48,19 +77,19 @@ def extract_answer_from_response(response: str) -> str:
         return boxed_match.group(1).upper()
     
     # 2. 查找 "The answer is X" 格式
-    # answer_patterns = [
-    #     r'(?:the\s+)?(?:best\s+)?(?:correct\s+)?answer\s+is\s+([A-E])',
-    #     r'(?:答案|正确答案)(?:是|为)\s*([A-E])',
-    #     r'选择\s*([A-E])',
-    #     r'选项\s*([A-E])'
-    # ]
+    answer_patterns = [
+        r'(?:the\s+)?(?:best\s+)?(?:correct\s+)?answer\s+is\s+([A-E])',
+        r'(?:答案|正确答案)(?:是|为)\s*([A-E])',
+        r'选择\s*([A-E])',
+        r'选项\s*([A-E])'
+    ]
     
-    # for pattern in answer_patterns:
-    #     match = re.search(pattern, response, re.IGNORECASE)
-    #     if match:
-    #         return match.group(1).upper()
+    for pattern in answer_patterns:
+        match = re.search(pattern, response, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
     
-    # # 3. 查找最后出现的单独选项字母
+    # 3. 查找最后出现的单独选项字母
     # single_letter_pattern = r'\b([A-E])\b'
     # matches = re.findall(single_letter_pattern, response, re.IGNORECASE)
     # if matches:
@@ -68,6 +97,62 @@ def extract_answer_from_response(response: str) -> str:
     
     # 4. 如果都没找到，返回空字符串
     return ""
+
+
+def extract_pubmedqa_answer(response: str) -> str:
+    """
+    从生成的回答中提取PubMedQA答案 (yes, no, maybe)
+    用于PubMedQA数据集
+    """
+    if not response:
+        return ""
+    
+    # 如果response是列表，取第一个元素
+    if isinstance(response, list) and len(response) > 0:
+        response = response[0]
+    
+    # 转换为字符串
+    response = str(response).lower()
+    
+    # 1. 查找 \boxed{} 格式
+    boxed_pattern = r'\\boxed\{(yes|no|maybe)\}'
+    boxed_match = re.search(boxed_pattern, response, re.IGNORECASE)
+    if boxed_match:
+        return boxed_match.group(1).lower()
+    
+    # 2. 查找明确的答案模式
+    answer_patterns = [
+        r'(?:the\s+)?(?:final\s+)?answer\s+is\s+(yes|no|maybe)',
+        r'(?:my\s+)?(?:final\s+)?(?:answer|conclusion)\s*:?\s*(yes|no|maybe)',
+        r'\b(yes|no|maybe)\b(?:\.|$|\s*$)'
+    ]
+    
+    for pattern in answer_patterns:
+        match = re.search(pattern, response, re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+    
+    # 3. 基于关键词的启发式匹配
+    # if 'yes' in response and 'no' not in response:
+    #     return 'yes'
+    # elif 'no' in response and 'yes' not in response:
+    #     return 'no'
+    # elif any(word in response for word in ['maybe', 'uncertain', 'unclear', 'possible']):
+    #     return 'maybe'
+    
+    # 4. 默认返回maybe
+    return ''
+
+
+def extract_answer_from_response(response: str, dataset_type: str = "medqa") -> str:
+    """
+    根据数据集类型从生成的回答中提取答案
+    """
+    if dataset_type == "pubmedqa":
+        return extract_pubmedqa_answer(response)
+    else:
+        # MedQA和NephSAP都使用多选题格式
+        return extract_multiple_choice_answer(response)
 
 
 def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
@@ -79,6 +164,10 @@ def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
     correct_count = 0
     no_answer_count = 0
     
+    # 检测数据集类型
+    dataset_type = detect_dataset_type(data)
+    print(f"检测到数据集类型: {dataset_type}")
+    
     # 按meta_info分类统计
     meta_stats = {}
     
@@ -86,9 +175,16 @@ def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
     enhanced_data = []
     
     for item in data:
-        correct_answer = item['answer_idx'].upper()
+        # 根据数据集类型获取正确答案
+        if dataset_type == "pubmedqa":
+            # PubMedQA使用answer字段，值为yes/no/maybe
+            correct_answer = str(item.get('answer', '')).lower()
+        else:
+            # MedQA和NephSAP使用answer_idx字段，值为A/B/C/D/E
+            correct_answer = str(item.get('answer_idx', '')).upper()
+        
         generated_response = item.get('generated_response', '')
-        predicted_answer = extract_answer_from_response(generated_response)
+        predicted_answer = extract_answer_from_response(generated_response, dataset_type)
         meta_info = item.get('meta_info', 'unknown')
         
         # 判断是否正确
@@ -103,6 +199,7 @@ def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
         enhanced_item = item.copy()
         enhanced_item['extracted_answer'] = predicted_answer
         enhanced_item['is_correct'] = is_correct
+        enhanced_item['dataset_type'] = dataset_type
         enhanced_data.append(enhanced_item)
         
         # 初始化meta_info统计
@@ -133,6 +230,7 @@ def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
         'correct_count': correct_count,
         'no_answer_count': no_answer_count,
         'accuracy': accuracy,
+        'dataset_type': dataset_type,
         'meta_stats': meta_stats
     }
     
@@ -141,9 +239,22 @@ def evaluate_accuracy(data: List[Dict]) -> Tuple[float, Dict, List[Dict]]:
 
 def print_evaluation_results(accuracy: float, stats: Dict):
     """打印评估结果"""
+    dataset_type = stats.get('dataset_type', 'unknown')
+    dataset_name_map = {
+        'pubmedqa': 'PubMedQA',
+        'medqa': 'MedQA/NephSAP',
+        'unknown': '未知数据集'
+    }
+    dataset_name = dataset_name_map.get(dataset_type, dataset_type)
+    
     print("=" * 60)
-    print("医疗问答数据集评估结果")
+    print(f"医疗问答数据集评估结果 - {dataset_name}")
     print("=" * 60)
+    print(f"数据集类型: {dataset_type}")
+    if dataset_type == 'pubmedqa':
+        print("答案格式: yes/no/maybe")
+    else:
+        print("答案格式: A/B/C/D/E")
     print(f"总题目数量: {stats['total_count']}")
     print(f"正确回答数量: {stats['correct_count']}")
     print(f"无法提取答案数量: {stats['no_answer_count']}")
@@ -279,14 +390,24 @@ def main():
         print("\n详细错误分析:")
         print("-" * 40)
         error_count = 0
+        dataset_type = stats.get('dataset_type', 'unknown')
+        
         for i, item in enumerate(enhanced_data):
             if not item['is_correct']:
                 error_count += 1
                 if error_count <= 10:  # 只显示前10个错误
                     print(f"错误 {error_count} (索引 {i}):")
-                    print(f"  正确答案: {item['answer_idx']}")
+                    
+                    # 根据数据集类型显示正确答案
+                    if dataset_type == "pubmedqa":
+                        correct_answer = item.get('answer', 'N/A')
+                    else:
+                        correct_answer = item.get('answer_idx', 'N/A')
+                    
+                    print(f"  正确答案: {correct_answer}")
                     print(f"  预测答案: {item['extracted_answer'] if item['extracted_answer'] else '无法提取'}")
                     print(f"  题目类型: {item.get('meta_info', 'unknown')}")
+                    print(f"  数据集类型: {dataset_type}")
                     print()
         
         if error_count > 10:

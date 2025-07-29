@@ -1,0 +1,66 @@
+{
+  "1": {
+    "critique_request": "Check whether the assistant answered **every part** of the original problem. List any sub‑questions that were ignored, partially addressed, or misunderstood.",
+    "edit_request": "Expand or adjust the answer so that it **fully covers all sub‑questions**, ensuring no aspect of the prompt is left unanswered."
+  },
+  "2": {
+    "critique_request": "Evaluate the **relevance** of the assistant’s response to the stated problem. Identify sentences, computations, or digressions that are off‑topic.",
+    "edit_request": "Rewrite the response to stay **directly on topic**, removing or replacing content that is not clearly tied to the question."
+  },
+  "3": {
+    "critique_request": "Judge whether the **chosen method or approach** is appropriate and efficient for the problem at hand. Flag any method that is needlessly complex or ill‑suited.",
+    "edit_request": "Substitute a **more suitable method** (or justify the current one thoroughly) and show the revised solution using that method."
+  },
+  "4": {
+    "critique_request": "Identify **alternative methods** the assistant overlooked that could provide deeper insight or greater efficiency.",
+    "edit_request": "Briefly outline at least one **viable alternative approach**, comparing its merits to the original and integrating it into the solution where appropriate."
+  },
+  "5": {
+    "critique_request": "Spot any **missing citations or unnamed theorems** the assistant implicitly relied on. Note where explicit references are needed.",
+    "edit_request": "Add **proper citations or explicit statements** of every theorem, property, or formula used in the argument."
+  },
+  "6": {
+    "critique_request": "Verify all **computations and logical deductions** for accuracy. List each error with a brief explanation.",
+    "edit_request": "Correct every **computational or logical mistake**, re‑compute results, and supply clear justifications for each corrected step."
+  },
+  "7": {
+    "critique_request": "Examine the **rigor** of the proof or derivation; highlight steps that are informal, circular, or insufficiently justified.",
+    "edit_request": "Upgrade the response to a **fully rigorous argument**, explicitly citing rules, definitions, or theorems at each critical step."
+  },
+  "8": {
+    "critique_request": "Point out any **missing intermediate steps** that render the derivation hard to follow or verify.",
+    "edit_request": "Insert all **omitted steps** and brief explanations so the reasoning flows transparently from premise to conclusion."
+  },
+  "9": {
+    "critique_request": "Detect **redundant or unnecessary steps** that do not contribute to the final result.",
+    "edit_request": "Streamline the derivation by removing superfluous content while preserving full logical integrity."
+  },
+  "10": {
+    "critique_request": "Identify any **hidden or unjustified assumptions** in the assistant’s reasoning and discuss how they affect validity.",
+    "edit_request": "Make all **assumptions explicit**, justify them, or reformulate the solution so it does not rely on unsupported premises."
+  },
+  "11": {
+    "critique_request": "Highlight any **conceptual misunderstandings** of fundamental principles (e.g., limits, probability, linearity).",
+    "edit_request": "Correct the **conceptual errors** and reinforce the proper principles with concise explanations or examples."
+  },
+  "12": {
+    "critique_request": "Detect any **misuse or confusion of definitions** (e.g., mixing variance with standard deviation, injective with surjective).",
+    "edit_request": "Rewrite the relevant portions to apply **definitions accurately and consistently**, citing them where first used."
+  },
+  "13": {
+    "critique_request": "Check for **unit or dimensional inconsistencies**, such as adding quantities of incompatible units.",
+    "edit_request": "Fix every **unit/dimension error**, perform a dimensional analysis check, and present final results with correct units."
+  },
+  "14": {
+    "critique_request": "Evaluate the **clarity and organization** of the exposition; locate sentences or equations that may confuse the reader.",
+    "edit_request": "Rewrite for **maximum clarity and coherence**, reorganizing sections or rephrasing explanations as needed."
+  },
+  "15": {
+    "critique_request": "Find any **inconsistent, undefined, or ambiguous notation** that could obscure meaning.",
+    "edit_request": "Standardize all **symbols and notation**, define any non‑standard symbols, and ensure consistent usage throughout."
+  },
+  "16": {
+    "critique_request": "Identify the **single most critical flaw** (computational, logical, or conceptual) that invalidates the conclusion, and explain its impact.",
+    "edit_request": "Remove or rectify this **fatal flaw** and reconstruct the argument so that the final conclusion is sound."
+  }
+}

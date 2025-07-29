@@ -4,6 +4,9 @@ from collections import defaultdict, Counter
 import random
 from math_verify import LatexExtractionConfig, ExprExtractionConfig, math_metric
 from pathlib import Path
+import csv
+import ast
+import pandas as pd
 def create_dpo_dataset(input_file, reward_key, output_file):
     data_list = []
     with open(input_file, 'r') as f:
@@ -474,11 +477,167 @@ def merge_maj_reward_to_rule_self_reward(maj_file, rule_self_file, output_file):
     print(f"merged data size: {len(merged_data)}")
     exit()
 
+
+def convert_pubmedqa_parquet_to_jsonl(parquet_file_path, jsonl_file_path):
+    """
+    将PubMedQA的parquet文件转换为JSONL格式。
+    
+    Args:
+        parquet_file_path: 输入的parquet文件路径
+        jsonl_file_path: 输出的JSONL文件路径
+    """
+    # 读取parquet文件
+    df = pd.read_parquet(parquet_file_path)
+    
+    data_list = []
+    
+    for idx, row in df.iterrows():
+        # 辅助函数：将numpy数组转换为Python列表
+        def convert_to_list(value):
+            if hasattr(value, 'tolist'):
+                return value.tolist()
+            elif isinstance(value, list):
+                return value
+            else:
+                return value
+        
+        # 构建JSONL格式的数据项
+        data_item = {
+            "pubid": str(row.get('pubid', '')),
+            "question": str(row.get('question', '')),
+            # "context": convert_to_list(row.get('context', [])),
+            # "labels": convert_to_list(row.get('labels', [])),
+            # "meshes": convert_to_list(row.get('meshes', [])),
+            # "reasoning_required_pred": convert_to_list(row.get('reasoning_required_pred', [])),
+            # "reasoning_free_pred": convert_to_list(row.get('reasoning_free_pred', [])),
+            "long_answer": str(row.get('long_answer', '')),
+            "answer": str(row.get('final_decision', ''))
+        }
+        
+        data_list.append(data_item)
+    
+    # 保存到JSONL文件
+    with open(jsonl_file_path, 'w', encoding='utf-8') as f:
+        for item in data_list:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+    
+    print(f"转换完成: 共处理 {len(data_list)} 条数据")
+    print(f"输出文件: {jsonl_file_path}")
+    return len(data_list)
+
+
+def convert_nephsap_csv_to_medqa_jsonl(csv_file_path, jsonl_file_path):
+    """
+    将NEJM_All_Questions_And_Answers.csv文件转换为med_qa格式的JSONL文件。
+    
+    Args:
+        csv_file_path: 输入的CSV文件路径
+        jsonl_file_path: 输出的JSONL文件路径
+    """
+    data_list = []
+    
+    with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        
+        for row in reader:
+            # 获取基本信息
+            question_text = row.get('Question', '').strip()
+            context = row.get('Context', '').strip()
+            choices_str = row.get('Choices', '').strip()
+            answer = row.get('Answer', '').strip()
+            subject = row.get('Subject', '').strip()
+            
+            # 跳过空问题
+            if not question_text:
+                continue
+            
+            # 构建完整问题（如果有context，则加上context）
+            if context:
+                full_question = f"{context}\n\n{question_text}"
+            else:
+                full_question = question_text
+            
+            # 解析选项
+            options = {}
+            answer_idx = ""
+            
+            if choices_str:
+                try:
+                    # 尝试解析选项字符串
+                    # 假设格式类似: "A. option1\nB. option2\nC. option3\nD. option4"
+                    choice_lines = choices_str.split('\n')
+                    for line in choice_lines:
+                        line = line.strip()
+                        if line and '. ' in line:
+                            parts = line.split('. ', 1)
+                            if len(parts) == 2:
+                                option_key = parts[0].strip()
+                                option_value = parts[1].strip()
+                                options[option_key] = option_value
+                                
+                                # 如果这个选项的内容与答案匹配，记录答案索引
+                                if option_value == answer or option_key == answer:
+                                    answer_idx = option_key
+                except Exception as e:
+                    print(f"解析选项时出错: {e}, 选项字符串: {choices_str}")
+                    continue
+            
+            # 如果没有找到答案索引，尝试直接匹配
+            if not answer_idx and answer in options.values():
+                for key, value in options.items():
+                    if value == answer:
+                        answer_idx = key
+                        break
+            
+            # 如果答案就是选项字母，直接使用
+            if not answer_idx and answer in options.keys():
+                answer_idx = answer
+                answer = options[answer]
+            
+            # 确定meta_info（根据subject或其他规则）
+            # 这里简单地根据subject判断，可以根据实际需要调整
+            if 'step1' in subject.lower() or 'basic' in subject.lower():
+                meta_info = "step1"
+            else:
+                meta_info = "step2&3"
+            
+            # 构建数据项
+            data_item = {
+                "question": full_question,
+                "answer": answer,
+                "options": options,
+                "meta_info": meta_info,
+                "answer_idx": answer_idx
+            }
+            
+            data_list.append(data_item)
+    
+    # 保存到JSONL文件
+    with open(jsonl_file_path, 'w', encoding='utf-8') as f:
+        for item in data_list:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+    
+    print(f"转换完成！共处理 {len(data_list)} 条数据")
+    print(f"输出文件: {jsonl_file_path}")
+    return len(data_list)
+
+
 if __name__ == "__main__":
-    input_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train.jsonl"
-    output_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train_500seed.jsonl"
-    sample_num = 500
-    sample_med_qa_data(input_file, output_file, sample_num)
+    # 测试PubMedQA parquet到JSONL转换函数
+    # convert_pubmedqa_parquet_to_jsonl(
+    #     '/pubshare/fwk/code/SeRL/evaluation/Health/dataset/raw/PubMedQA/pqa_labeled/train-00000-of-00001.parquet',
+    #     '/pubshare/fwk/code/SeRL/evaluation/Health/dataset/pubmedqa/test.jsonl'
+    # )
+    
+    # 测试CSV到JSONL转换功能
+    # csv_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/raw/nephsap/NEJM_All_Questions_And_Answers.csv"
+    # jsonl_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/nephsap/test.jsonl"
+    # convert_nephsap_csv_to_medqa_jsonl(csv_file, jsonl_file)
+    
+    # input_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train.jsonl"
+    # output_file = "/pubshare/fwk/code/SeRL/evaluation/Health/dataset/med_qa/train_500seed.jsonl"
+    # sample_num = 500
+    # sample_med_qa_data(input_file, output_file, sample_num)
 
     # maj_file = "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_16/math_500/qwen25_7b_maj_eval.jsonl"
     # rule_self_file = "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_16/math_500/test_pure_-1_seed0_t1.0_s0_e-1_with_self_math_reward_with_rule_reward.jsonl"
@@ -489,8 +648,8 @@ if __name__ == "__main__":
     #     output_file=output_file
     # )
 
-    # input_file = "/xxx/SEO/MMLU-Pro/eval_results/summary/qwen25_7B-origin_7_5k_random_bon_gt_bs16-CoT-all_05-02_03-35_summary.txt"
-    # mmlu_pro_acc(input_file)
+    input_file = "/pubshare/fwk/code/SeRL/evaluation/MMLU-Pro/eval_results/summary/qwen_25_7B_global_step250_hf-CoT-all_05-12_13-37_summary.txt"
+    mmlu_pro_acc(input_file)
 
     # math_eval_dir = Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
     # data_subdirs = [

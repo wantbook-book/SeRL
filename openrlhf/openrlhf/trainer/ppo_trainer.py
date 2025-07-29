@@ -521,8 +521,8 @@ class PPOTrainer(ABC):
 
         
         self.logger.finish()
-        if self._tensorboard is not None and self.strategy.is_rank_0():
-            self._tensorboard.close()
+        # if self._tensorboard is not None and self.strategy.is_rank_0():
+        #     self._tensorboard.close()
 
 
 

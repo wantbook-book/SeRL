@@ -365,7 +365,6 @@ class RemoteExperienceMaker(ABC):
                         labels=labels_list[start_idx:end_idx],
                     )
                     r_refs.append(r)
-
         if args.colocate_all_models and not self.remote_rm_url:
             ray.get(r_refs)
             ray.get(self.reward_model_group.async_run_method(method_name="empty_cache"))
