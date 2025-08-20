@@ -228,7 +228,7 @@ def main(llm, tokenizer, data_name, args):
         sample["prompt"] for sample in samples for _ in range(args.n_sampling)
     ]
     if args.prompt_file:
-        input_prompts = [PROMPT+prompt for prompt in input_prompts]
+        input_prompts = [prompt+PROMPT for prompt in input_prompts]
     # else:
     #     input_prompts = [item[1] for item in input_prompts]
     if args.apply_chat_template:
@@ -260,7 +260,6 @@ def main(llm, tokenizer, data_name, args):
         stop_words.append("\n### Problem")
     elif "pure" in args.prompt_type:
         stop_words.append("\n\n\n")
-
     # start inference
     # measure time use
     start_time = time.time()
@@ -281,7 +280,7 @@ def main(llm, tokenizer, data_name, args):
                 SamplingParams(
                     temperature=args.temperature,
                     top_p=args.top_p,
-                    max_tokens=1024,
+                    max_tokens=args.max_tokens_per_call,
                     # max_tokens=128,
                     n=1,
                     stop=stop_words, #+['## Step 2:'],

@@ -12,21 +12,17 @@ SPLIT="test"
 # ================need to modify=======================
 # List of model paths
 MODEL_PATH_LIST=(
-    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+    "/angel/fwk/checkpoints/qwen25_7B-serl_iter5"
+    "/angel/fwk/checkpoints/qwen25_7B-serl_iter5/global_step50_hf"
 )
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-DATA_DIR="/angel/fwk/code/SeRL/evaluation/Math-Benchmarks/data"
-DATA_NAME="math_500"
-
-N_SAMPLING=1
-TEMPRATURE=0.6
-MAX_TOKENS=32768
-PROMPT_FILE=/angel/fwk/code/SeRL/evaluation/Math-Benchmarks/prompts/cot.txt
-CHAT_TEMPLATE_ARG="--apply_chat_template"
+DATA_DIR="/root/code/SeRL/evaluation/Math-Benchmarks/data"
+DATA_NAME="math_500,math_hard,asdiv,college_math,tabmwp"
 # ================need to modify=======================
+N_SAMPLING=1
 
 for MODEL_NAME_OR_PATH in "${MODEL_PATH_LIST[@]}"; do
-    OUTPUT_DIR="${MODEL_NAME_OR_PATH}/math_eval_sampling_${N_SAMPLING}"
+    OUTPUT_DIR="${MODEL_NAME_OR_PATH}/math_eval_greedy"
     
     python3 -u vllm_gen_outputs.py \
         --model_name_or_path "${MODEL_NAME_OR_PATH}" \
@@ -36,18 +32,15 @@ for MODEL_NAME_OR_PATH in "${MODEL_PATH_LIST[@]}"; do
         --prompt_type "${PROMPT_TYPE}" \
         --num_test_sample "${NUM_TEST_SAMPLE}" \
         --seed 0 \
-        --temperature ${TEMPRATURE} \
+        --temperature 0 \
         --n_sampling ${N_SAMPLING} \
-        --top_p 0.95 \
+        --top_p 1 \
         --start 0 \
         --end -1 \
         --use_vllm \
         --save_outputs \
-        --max_tokens_per_call ${MAX_TOKENS} \
         --overwrite \
-        --data_dir "${DATA_DIR}" \
-        --prompt_file ${PROMPT_FILE} \
-        ${CHAT_TEMPLATE_ARG}
+        --data_dir "${DATA_DIR}"
 done
 
 # End time
