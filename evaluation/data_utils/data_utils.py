@@ -7,6 +7,7 @@ from pathlib import Path
 import csv
 import ast
 import pandas as pd
+import statistics
 def create_dpo_dataset(input_file, reward_key, output_file):
     data_list = []
     with open(input_file, 'r') as f:
@@ -302,12 +303,172 @@ def maj_acc(input_file, n):
                 
 def print_eval_data_acc(math_eval_dir: Path, data_subdirs):
     data2acc = {}
+    data2stats = {}
+    
     for data_subdir in data_subdirs:
         data_dir = math_eval_dir / data_subdir
-        with open(data_dir / 'test_pure_-1_seed0_t0.0_s0_e-1_output_metrics.json', 'r') as f:
+        with open(data_dir / 'test_pure_-1_seed0_t1.0_s0_e-1_output_metrics.json', 'r') as f:
             data = json.load(f)
-            data2acc[data_subdir] = data['accuracy']
-    print(f"data2acc: {data2acc}")
+            accuracy_list = data['accuracy']
+            
+            # 计算平均值和标准差
+            if isinstance(accuracy_list, list) and len(accuracy_list) > 0:
+                mean_acc = statistics.mean(accuracy_list)
+                std_acc = statistics.stdev(accuracy_list) if len(accuracy_list) > 1 else 0.0
+                data2acc[data_subdir] = mean_acc
+                data2stats[data_subdir] = {
+                    'accuracy_list': accuracy_list,
+                    'mean': mean_acc,
+                    'std': std_acc,
+                    'count': len(accuracy_list)
+                }
+            else:
+                # 如果accuracy不是列表，保持原有行为
+                data2acc[data_subdir] = accuracy_list
+                data2stats[data_subdir] = {
+                    'accuracy_list': [accuracy_list] if not isinstance(accuracy_list, list) else accuracy_list,
+                    'mean': accuracy_list if not isinstance(accuracy_list, list) else statistics.mean(accuracy_list),
+                    'std': 0.0,
+                    'count': 1 if not isinstance(accuracy_list, list) else len(accuracy_list)
+                }
+    
+    # 输出详细统计信息
+    print("=" * 80)
+    print("数学评估数据集准确率统计")
+    print("=" * 80)
+    for data_subdir, stats in data2stats.items():
+        print(f"\n数据集: {data_subdir}")
+        print(f"  平均准确率: {stats['mean']:.4f} ({stats['mean']*100:.2f}%)")
+        print(f"  标准差: {stats['std']:.4f} ({stats['std']*100:.2f}%)")
+        print(f"  样本数量: {stats['count']}")
+        if len(stats['accuracy_list']) <= 20:  # 只显示较短的列表
+            print(f"  准确率列表: {[f'{acc:.3f}' for acc in stats['accuracy_list']]}")
+        else:
+            print(f"  准确率范围: [{min(stats['accuracy_list']):.3f}, {max(stats['accuracy_list']):.3f}]")
+    
+    print("\n" + "=" * 80)
+    print(f"总体平均准确率: {statistics.mean(data2acc.values()):.4f} ({statistics.mean(data2acc.values())*100:.2f}%)")
+    print("=" * 80)
+    
+    # 保持原有的简单输出格式（向后兼容）
+    print(f"\ndata2acc: {data2acc}")
+
+def print_health_eval_data_acc(health_eval_dir: Path):
+    """
+    输出健康数据集评估目录下各数据集的准确率。
+    
+    Args:
+        health_eval_dir: 健康数据集评估结果目录路径
+                        例如: /pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step100_hf
+    """
+    data2acc = {}
+    
+    # 遍历目录下的所有子目录
+    for data_subdir in health_eval_dir.iterdir():
+        if data_subdir.is_dir():
+            dataset_name = data_subdir.name
+            
+            # 查找评估结果文件
+            report_files = list(data_subdir.glob("*_report.json"))
+            summary_files = list(data_subdir.glob("*_summary.json"))
+            
+            accuracy = None
+            
+            # 优先从summary文件读取准确率
+            if summary_files:
+                try:
+                    with open(summary_files[0], 'r', encoding='utf-8') as f:
+                        summary_data = json.load(f)
+                        accuracy = summary_data.get('accuracy', summary_data.get('overall_accuracy'))
+                except Exception as e:
+                    print(f"警告：读取summary文件失败 {summary_files[0]}: {e}")
+            
+            # 如果summary文件没有准确率信息，尝试从report文件读取
+            if accuracy is None and report_files:
+                try:
+                    with open(report_files[0], 'r', encoding='utf-8') as f:
+                        report_data = json.load(f)
+                        accuracy = report_data.get('accuracy', report_data.get('overall_accuracy'))
+                except Exception as e:
+                    print(f"警告：读取report文件失败 {report_files[0]}: {e}")
+            
+            # 如果都没有找到，尝试直接运行evaluate.py生成评估结果
+            if accuracy is None:
+                jsonl_files = list(data_subdir.glob("*.jsonl"))
+                if jsonl_files:
+                    print(f"警告：{dataset_name} 数据集没有找到评估结果文件，需要先运行evaluate.py")
+                    print(f"建议运行: python /pubshare/fwk/code/SeRL/evaluation/Health/evaluate.py {jsonl_files[0]}")
+                else:
+                    print(f"警告：{dataset_name} 数据集目录下没有找到数据文件")
+            
+            if accuracy is not None:
+                data2acc[dataset_name] = accuracy
+    
+    # 输出结果
+    if data2acc:
+        print("=" * 60)
+        print("健康数据集评估准确率结果:")
+        print("=" * 60)
+        for dataset, acc in data2acc.items():
+            print(f"{dataset:15s}: {acc:.4f} ({acc*100:.2f}%)")
+        print("=" * 60)
+        print(f"平均准确率: {sum(data2acc.values())/len(data2acc):.4f} ({sum(data2acc.values())/len(data2acc)*100:.2f}%)")
+    else:
+        print("未找到任何评估结果，请先运行evaluate.py生成评估报告")
+    exit()
+    return data2acc
+
+def split_cai_jsonl(input_file, output_initial_file, output_revised_file):
+    """
+    将examples.jsonl文件拆分成两个文件，一个包含initial_response，另一个包含revised_response。
+    
+    Args:
+        input_file: 输入的examples.jsonl文件路径
+        output_initial_file: 输出的包含initial_response的文件路径
+        output_revised_file: 输出的包含revised_response的文件路径
+    """
+    initial_data = []
+    revised_data = []
+    
+    with open(input_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line.strip())
+                
+                # 提取共同字段
+                common_fields = {
+                    "idx": entry.get("idx"),
+                    "problem": entry.get("problem"),
+                    "answer": entry.get("answer")
+                }
+                
+                # 创建包含initial_response的数据项
+                if "initial_response" in entry:
+                    initial_item = common_fields.copy()
+                    initial_item["code"] = [entry["initial_response"]]
+                    initial_data.append(initial_item)
+                
+                # 创建包含revised_response的数据项
+                if "revised_response" in entry:
+                    revised_item = common_fields.copy()
+                    revised_item["code"] = [entry["revised_response"]]
+                    revised_data.append(revised_item)
+    
+    # 写入initial_response文件
+    with open(output_initial_file, 'w', encoding='utf-8') as f:
+        for item in initial_data:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+    
+    # 写入revised_response文件
+    with open(output_revised_file, 'w', encoding='utf-8') as f:
+        for item in revised_data:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+    
+    print(f"拆分完成:")
+    print(f"  - Initial responses: {len(initial_data)} 条数据 -> {output_initial_file}")
+    print(f"  - Revised responses: {len(revised_data)} 条数据 -> {output_revised_file}")
+    
+    return len(initial_data), len(revised_data)
 
 def mmlu_pro_acc(input_file):
     # Match the number 0.3812 from "Average accuracy 0.3812"
@@ -390,6 +551,108 @@ def mmlu_pro_acc(input_file):
         print("No match found")
 
 
+
+def compare_initial_revised_accuracy(initial_file, revised_file):
+    """
+    对比initial_examples.jsonl和revised_examples.jsonl中同一问题在修订前后的准确率变化。
+    
+    Args:
+        initial_file: initial_examples.jsonl文件路径
+        revised_file: revised_examples.jsonl文件路径
+    
+    Returns:
+        dict: 包含统计结果的字典
+    """
+    # 读取initial文件
+    initial_data = {}
+    with open(initial_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line.strip())
+                idx = entry['idx']
+                is_correct = entry.get('any_correct', False)
+                initial_data[idx] = is_correct
+    
+    # 读取revised文件
+    revised_data = {}
+    with open(revised_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line.strip())
+                idx = entry['idx']
+                is_correct = entry.get('any_correct', False)
+                revised_data[idx] = is_correct
+    
+    # 统计结果
+    total_questions = len(initial_data)
+    initial_correct = sum(initial_data.values())
+    revised_correct = sum(revised_data.values())
+    
+    # 对比变化
+    correct_to_wrong = 0  # initial正确，revision错误
+    wrong_to_correct = 0  # initial错误，revision正确
+    both_correct = 0      # 都正确
+    both_wrong = 0        # 都错误
+    
+    for idx in initial_data:
+        if idx in revised_data:
+            initial_is_correct = initial_data[idx]
+            revised_is_correct = revised_data[idx]
+            
+            if initial_is_correct and not revised_is_correct:
+                correct_to_wrong += 1
+            elif not initial_is_correct and revised_is_correct:
+                wrong_to_correct += 1
+            elif initial_is_correct and revised_is_correct:
+                both_correct += 1
+            else:
+                both_wrong += 1
+    
+    # 计算准确率
+    initial_accuracy = initial_correct / total_questions if total_questions > 0 else 0
+    revised_accuracy = revised_correct / total_questions if total_questions > 0 else 0
+    
+    results = {
+        'total_questions': total_questions,
+        'initial_correct': initial_correct,
+        'revised_correct': revised_correct,
+        'initial_accuracy': initial_accuracy,
+        'revised_accuracy': revised_accuracy,
+        'accuracy_change': revised_accuracy - initial_accuracy,
+        'correct_to_wrong': correct_to_wrong,
+        'wrong_to_correct': wrong_to_correct,
+        'both_correct': both_correct,
+        'both_wrong': both_wrong
+    }
+    
+    # 输出结果
+    print("=" * 80)
+    print("Initial vs Revised 准确率对比分析")
+    print("=" * 80)
+    print(f"总问题数量: {total_questions}")
+    print(f"Initial 正确数量: {initial_correct} ({initial_accuracy:.4f} = {initial_accuracy*100:.2f}%)")
+    print(f"Revised 正确数量: {revised_correct} ({revised_accuracy:.4f} = {revised_accuracy*100:.2f}%)")
+    print(f"准确率变化: {results['accuracy_change']:.4f} ({results['accuracy_change']*100:+.2f}%)")
+    print("\n详细变化统计:")
+    print(f"  Initial正确 → Revised错误: {correct_to_wrong} 题")
+    print(f"  Initial错误 → Revised正确: {wrong_to_correct} 题")
+    print(f"  Initial正确 → Revised正确: {both_correct} 题")
+    print(f"  Initial错误 → Revised错误: {both_wrong} 题")
+    
+    # 净改进分析
+    net_improvement = wrong_to_correct - correct_to_wrong
+    print(f"\n净改进: {net_improvement} 题 ({net_improvement/total_questions*100:+.2f}%)")
+    
+    if net_improvement > 0:
+        print("✅ Revision 总体上提高了准确率")
+    elif net_improvement < 0:
+        print("❌ Revision 总体上降低了准确率")
+    else:
+        print("➖ Revision 对准确率没有净影响")
+    
+    print("=" * 80)
+    
+    return results
 
 def extract_correct_answers(input_file, output_file):
     """
@@ -622,7 +885,143 @@ def convert_nephsap_csv_to_medqa_jsonl(csv_file_path, jsonl_file_path):
     return len(data_list)
 
 
+def extract_majority_answers(input_file, output_file):
+    """
+    从examples.jsonl文件中提取每个问题的多数solution。
+    根据preds_group_idx确定多数的group，从中随机选一个作为majority response。
+    
+    Args:
+        input_file: 输入的examples.jsonl文件路径
+        output_file: 输出的jsonl文件路径，包含instruction、input、output字段
+    """
+    import random
+    from collections import Counter
+    
+    # 设置随机种子以确保可重现性
+    random.seed(42)
+    
+    data_list = []
+    
+    with open(input_file, 'r') as f:
+        for line in f:
+            entry = json.loads(line)
+            
+            # 获取问题
+            problem = entry.get("problem", "")
+            if not problem:
+                continue
+            
+            # 获取预测组索引和代码响应
+            preds_group_idx = entry.get("preds_group_idx", [])
+            code_responses = entry.get("code", [])
+            
+            if not preds_group_idx or not code_responses:
+                continue
+            
+            # 统计每个组的出现次数，找到多数组
+            group_counts = Counter(preds_group_idx)
+            majority_group = group_counts.most_common(1)[0][0]
+            
+            # 找到属于多数组的所有索引
+            majority_indices = [i for i, group in enumerate(preds_group_idx) if group == majority_group]
+            
+            # 从多数组中随机选择一个响应
+            if majority_indices:
+                selected_index = random.choice(majority_indices)
+                majority_response = code_responses[selected_index]
+                
+                # 构建输出数据
+                data_item = {
+                    "instruction": problem,
+                    "input": "",
+                    "output": majority_response
+                }
+                data_list.append(data_item)
+    
+    # 保存到输出文件
+    with open(output_file, 'w') as f:
+        for entry in data_list:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    
+    print(f"提取了 {len(data_list)} 个多数答案，保存到 {output_file}")
+
+
+def extract_correct_answers(input_file, output_file):
+    """
+    从examples.jsonl文件中提取每个问题的正确答案。
+    根据code_evaluations中的is_correct字段判断哪个回答是正确的，
+    如果所有回答都错误则使用solution字段。
+    
+    Args:
+        input_file: 输入的examples.jsonl文件路径
+        output_file: 输出的jsonl文件路径，包含instruction、input、output字段
+    """
+    data_list = []
+    
+    with open(input_file, 'r') as f:
+        for line in f:
+            entry = json.loads(line)
+            
+            # 获取问题
+            question = entry.get("question", "")
+            if not question:
+                continue
+                
+            # 查找第一个正确的回答
+            correct_answer = None
+            code_evaluations = entry.get("code_evaluations", [])
+            code_responses = entry.get("code", [])
+            
+            # 遍历评估结果，找到第一个正确的回答
+            for eval_item in code_evaluations:
+                if eval_item.get("is_correct", False):
+                    response_index = eval_item.get("response_index", -1)
+                    if response_index == -1:
+                        continue
+                    if response_index < len(code_responses):
+                        correct_answer = code_responses[response_index]
+                        break
+            
+            # 如果没有找到正确答案，使用solution字段
+            if correct_answer is None:
+                correct_answer = entry.get("solution", "")
+            
+            # 构建输出数据
+            if correct_answer:
+                data_item = {
+                    "instruction": question,
+                    "input": "",
+                    "output": correct_answer
+                }
+                data_list.append(data_item)
+    
+    # 保存到输出文件
+    with open(output_file, 'w') as f:
+        for entry in data_list:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    
+    print(f"提取了 {len(data_list)} 个正确答案，保存到 {output_file}")
+    exit()
+
 if __name__ == "__main__":
+    # initial_file = "/pubshare/fwk/code/SeRL/cai/output/llama32_3b_math500_initial_results_output.jsonl"
+    # revision_file = "/pubshare/fwk/code/SeRL/cai/output/llama32_3b_math500_revision_results_output.jsonl"
+    # compare_initial_revised_accuracy(initial_file, revision_file)
+    # input_file = "/pubshare/fwk/code/SeRL/cai/output/llama32_3b_math500_results.jsonl"
+    # output_initial_file = "/pubshare/fwk/code/SeRL/cai/output/llama32_3b_math500_initial_results.jsonl"
+    # output_revised_file = "/pubshare/fwk/code/SeRL/cai/output/llama32_3b_math500_revision_results.jsonl"
+    # split_cai_jsonl(
+    #     input_file, output_initial_file, output_revised_file
+    # )
+    # data_dir = "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step100_hf"
+    # data_dir_list = [
+    #     "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step200_hf",
+    #     "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step300_hf",
+    #     "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step400_hf"
+    # ]
+    # for data_dir in data_dir_list:
+    #     print_health_eval_data_acc(Path(data_dir))
+
     # 测试PubMedQA parquet到JSONL转换函数
     # convert_pubmedqa_parquet_to_jsonl(
     #     '/pubshare/fwk/code/SeRL/evaluation/Health/dataset/raw/PubMedQA/pqa_labeled/train-00000-of-00001.parquet',
@@ -648,16 +1047,26 @@ if __name__ == "__main__":
     #     output_file=output_file
     # )
 
-    input_file = "/pubshare/fwk/code/SeRL/evaluation/MMLU-Pro/eval_results/summary/qwen_25_7B_global_step250_hf-CoT-all_05-12_13-37_summary.txt"
-    mmlu_pro_acc(input_file)
+    # input_file = "/pubshare/fwk/code/SeRL/evaluation/MMLU-Pro/eval_results/summary/qwen_25_7B_global_step250_hf-CoT-all_05-12_13-37_summary.txt"
+    # mmlu_pro_acc(input_file)
 
-    # math_eval_dir = Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
-    # data_subdirs = [
-    #     'math_500', 'math_hard', 'asdiv', 'college_math', 'tabmwp'
-    #     # 'asdiv', 'carp_en', 'college_math', 'gaokao2023en', 'mawps', 
-    #     # 'minerva_math', 'mmlu_stem', 'olympiadbench', 'svamp', 'tabmwp'
-    # ]
-    # print_eval_data_acc(math_eval_dir, data_subdirs)
+    math_eval_dir_list = [
+        "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/outputs/pubshare/fwk/orlhf_checkpoints/select_checkpoint/qwen25_7B-random_bon_maj_bs16_seo/global_step100_hf/math_eval_sampling_16",
+        "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/outputs/pubshare/fwk/orlhf_checkpoints/select_checkpoint/qwen25_7B-random_bon_maj_bs16_seo/global_step200_hf/math_eval_sampling_16",
+        "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/outputs/pubshare/fwk/orlhf_checkpoints/select_checkpoint/qwen25_7B-random_bon_maj_bs16_seo_200/global_step50_hf/math_eval_sampling_16",
+        "/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/outputs/pubshare/fwk/orlhf_checkpoints/select_checkpoint/qwen25_7B-random_bon_maj_bs16_seo_200/global_step100_hf/math_eval_sampling_16"
+    ]
+    data_subdirs = [
+        'math_500', 'math_hard', 'asdiv', 'college_math', 'tabmwp'
+        # 'asdiv', 'carp_en', 'college_math', 'gaokao2023en', 'mawps', 
+        # 'minerva_math', 'mmlu_stem', 'olympiadbench', 'svamp', 'tabmwp'
+    ]
+    for math_eval_dir in math_eval_dir_list:
+        math_eval_dir = Path(math_eval_dir)
+
+        # math_eval_dir = ?Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
+        print_eval_data_acc(math_eval_dir, data_subdirs)
+
 
     # input_files = [
     #     "/xxx/SEO/Math-Verify/outputs/xxx/Qwen/Qwen2.5-7B-Instruct/math_eval_bon_32/gsm8k/test_pure_-1_seed0_t1.0_s0_e-1_maj_eval.jsonl",

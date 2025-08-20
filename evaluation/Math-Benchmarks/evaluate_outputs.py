@@ -1,4 +1,5 @@
 import argparse
+from tkinter import NONE
 import pandas as pd
 from typing import Any
 from math_verify.metric import math_metric
@@ -79,8 +80,11 @@ def compare_answers(extracted: Any, gold: Any) -> bool:
 def process_answers(input_list: list[dict], gold_is_latex: bool) -> Union[list[dict], dict]:
     """Process each answer through the sympy extraction workflow and compare with gold using math_verify."""
     results = []
-    correct_count = 0
-    avg_correct_count = 0
+    
+    code_len = None
+
+    correct_count = None
+    any_correct_count = 0
     total_count = 0
     
     # Create the verification function
@@ -93,6 +97,10 @@ def process_answers(input_list: list[dict], gold_is_latex: bool) -> Union[list[d
     )
     output_list = []
     for item in input_list:
+        if code_len is None:
+            code_len = len(item.get('code', []))
+            correct_count = [0 for _ in range(code_len)]
+
         # Evaluate all responses in the code list
         code_responses = item.get('code', [])
         if not isinstance(code_responses, list):
@@ -145,34 +153,42 @@ def process_answers(input_list: list[dict], gold_is_latex: bool) -> Union[list[d
                 item_results.append(response_result)
         
         total_count += 1
-        if item_results[0]['is_correct']:
-            correct_count += 1
+        for i in range(code_len):
+            if item_results[i]['is_correct']:
+                correct_count[i] += 1
         
         # Add evaluation results to the item
         item['code_evaluations'] = item_results
-        item['any_correct'] = any(r['is_correct'] for r in item_results)
+        item['any_correct'] = item_correct
+        any_correct_count += item_correct
         item['num_responses'] = len(code_responses)
         item['num_correct'] = sum(1 for r in item_results if r['is_correct'])
-        avg_correct_count += item['num_correct'] / item['num_responses']
         output_list.append(item)
 
     # Calculate accuracy
-    accuracy = correct_count / total_count if total_count > 0 else 0
-    avg_accuracy = avg_correct_count / total_count if total_count > 0 else 0
+    accuracy = []
+    for i in range(code_len):
+        accuracy.append(correct_count[i] / total_count if total_count > 0 else 0)
     print(f"\nEvaluation Results:")
     print(f"Total examples: {total_count}")
     print(f"Correct answers: {correct_count}")
-    print(f"Accuracy: {accuracy:.2%}")
-    print(f"Average accuracy: {avg_accuracy:.2%}")
+    print(f"Accuracy: {accuracy}")
+    print(f"Pass@k: {any_correct_count / total_count if total_count > 0 else 0}")
+    # Calculate mean and std of accuracy
+    accuracy_mean = sum(accuracy) / len(accuracy) if accuracy else 0
+    accuracy_std = (sum((x - accuracy_mean) ** 2 for x in accuracy) / len(accuracy)) ** 0.5 if accuracy else 0
+    print(f"Accuracy mean: {accuracy_mean:.4f}")
+    print(f"Accuracy std: {accuracy_std:.4f}")
     
     # Add summary stats to the dataframe
     result = {
         'accuracy': accuracy,
-        'avg_accuracy': avg_accuracy,
+        'pass@k': any_correct_count / total_count if total_count > 0 else 0,
         'total_count': total_count,
         'correct_count': correct_count
     }
     return output_list, result
+
 def main():
     args = parse_args()
     
