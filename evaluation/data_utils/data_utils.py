@@ -740,6 +740,70 @@ def merge_maj_reward_to_rule_self_reward(maj_file, rule_self_file, output_file):
     print(f"merged data size: {len(merged_data)}")
     exit()
 
+def print_health_eval_data_acc(health_eval_dir: Path):
+    """
+    输出健康数据集评估目录下各数据集的准确率。
+    
+    Args:
+        health_eval_dir: 健康数据集评估结果目录路径
+                        例如: /pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step100_hf
+    """
+    data2acc = {}
+    
+    # 遍历目录下的所有子目录
+    for data_subdir in health_eval_dir.iterdir():
+        if data_subdir.is_dir():
+            dataset_name = data_subdir.name
+            
+            # 查找评估结果文件
+            report_files = list(data_subdir.glob("*_report.json"))
+            summary_files = list(data_subdir.glob("*_summary.json"))
+            
+            accuracy = None
+            
+            # 优先从summary文件读取准确率
+            if summary_files:
+                try:
+                    with open(summary_files[0], 'r', encoding='utf-8') as f:
+                        summary_data = json.load(f)
+                        accuracy = summary_data.get('accuracy', summary_data.get('overall_accuracy'))
+                except Exception as e:
+                    print(f"警告：读取summary文件失败 {summary_files[0]}: {e}")
+            
+            # 如果summary文件没有准确率信息，尝试从report文件读取
+            if accuracy is None and report_files:
+                try:
+                    with open(report_files[0], 'r', encoding='utf-8') as f:
+                        report_data = json.load(f)
+                        accuracy = report_data.get('accuracy', report_data.get('overall_accuracy'))
+                except Exception as e:
+                    print(f"警告：读取report文件失败 {report_files[0]}: {e}")
+            
+            # 如果都没有找到，尝试直接运行evaluate.py生成评估结果
+            if accuracy is None:
+                jsonl_files = list(data_subdir.glob("*.jsonl"))
+                if jsonl_files:
+                    print(f"警告：{dataset_name} 数据集没有找到评估结果文件，需要先运行evaluate.py")
+                    print(f"建议运行: python /pubshare/fwk/code/SeRL/evaluation/Health/evaluate.py {jsonl_files[0]}")
+                else:
+                    print(f"警告：{dataset_name} 数据集目录下没有找到数据文件")
+            
+            if accuracy is not None:
+                data2acc[dataset_name] = accuracy
+    
+    # 输出结果
+    if data2acc:
+        print("=" * 60)
+        print("健康数据集评估准确率结果:")
+        print("=" * 60)
+        for dataset, acc in data2acc.items():
+            print(f"{dataset:15s}: {acc:.4f} ({acc*100:.2f}%)")
+        print("=" * 60)
+        print(f"平均准确率: {sum(data2acc.values())/len(data2acc):.4f} ({sum(data2acc.values())/len(data2acc)*100:.2f}%)")
+    else:
+        print("未找到任何评估结果，请先运行evaluate.py生成评估报告")
+    
+    return data2acc
 
 def convert_pubmedqa_parquet_to_jsonl(parquet_file_path, jsonl_file_path):
     """
@@ -1064,7 +1128,7 @@ if __name__ == "__main__":
     for math_eval_dir in math_eval_dir_list:
         math_eval_dir = Path(math_eval_dir)
 
-        # math_eval_dir = ?Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
+        # math_eval_dir = Path("/xxx/SEO/Math-Verify/outputs/xxx/orlhf_checkpoints/llama32_3B-random_bon_maj_bs16_seo_rloo2/global_step100_hf/math_eval")
         print_eval_data_acc(math_eval_dir, data_subdirs)
 
 

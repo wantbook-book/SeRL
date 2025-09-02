@@ -3,7 +3,7 @@ set -ex
 
 # Start time
 start_time=$(date +%s)
-
+export VLLM_USE_V1=0
 export TOKENIZERS_PARALLELISM=false
 PROMPT_TYPE="pure"
 NUM_TEST_SAMPLE=-1
@@ -12,13 +12,11 @@ SPLIT="test"
 # ================need to modify=======================
 # List of model paths
 MODEL_PATH_LIST=(
-    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama3-3b-filtered_correct_0_2_0_8_gen_math_7_5k_random_bon_maj_bs16/global_step100_hf"
-    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama3-3b-filtered_correct_0_2_0_8_gen_math_7_5k_random_bon_maj_bs16/global_step200_hf"
-    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama3-3b-filtered_correct_0_2_0_8_gen_math_7_5k_random_bon_maj_bs16/global_step300_hf"
-    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama3-3b-filtered_correct_0_2_0_8_gen_math_7_5k_random_bon_maj_bs16/global_step400_hf"
+    "/angel/fwk/checkpoints/qwen25_7B-serl_iter5"
+    "/angel/fwk/checkpoints/qwen25_7B-serl_iter5/global_step50_hf"
 )
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-DATA_DIR="/pubshare/fwk/code/SeRL/evaluation/Math-Benchmarks/data"
+DATA_DIR="/root/code/SeRL/evaluation/Math-Benchmarks/data"
 DATA_NAME="math_500,math_hard,asdiv,college_math,tabmwp"
 # ================need to modify=======================
 N_SAMPLING=1
