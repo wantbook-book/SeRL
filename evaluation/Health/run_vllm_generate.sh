@@ -1,8 +1,14 @@
 #!/bin/bash
-
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export VLLM_USE_V1=0
 # 定义模型列表
 models=(
     "/home/jovyan/share/LLMAgent/model/Llama-3.2-3B-Instruct"
+    "/pubshare/LLM/Qwen/Qwen2.5-7B-Instruct"
+    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step100_hf"
+    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step200_hf"
+    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step300_hf"
+    "/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step400_hf"
 )
 
 # 定义数据集配置
@@ -31,6 +37,6 @@ for model in "${models[@]}"; do
             --output_dir ./outputs \
             --overwrite \
             --include_options \
-            --pipeline_parallel_size 8
+            
     done
 done

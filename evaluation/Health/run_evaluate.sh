@@ -1,12 +1,34 @@
 #!/bin/bash
 
-# 定义要评估的文件列表
-files=(
-    # "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/home/jovyan/share/LLMAgent/model/Llama-3.2-3B-Instruct/nephsap/nephsap_medical_qa_-1_seed0_t0.0_s0_e-1.jsonl"
-    # "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/home/jovyan/share/LLMAgent/model/Llama-3.2-3B-Instruct/pubmedqa/pubmedqa_pubmedqa_-1_seed0_t0.0_s0_e-1.jsonl"
-    # "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/home/jovyan/share/LLMAgent/model/Llama-3.2-3B-Instruct/med_qa/medical_qa_medical_qa_-1_seed0_t0.0_s0_e-1.jsonl"
-    "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/home/jovyan/share/LLMAgent/model/Llama-3.2-3B-Instruct/med_qa/medical_qa_medical_qa_-1_seed0_t0.6_s0_e-1.jsonl"
+# 定义基础路径和参数
+BASE_PATH="/root/code/SeRL/evaluation/Health/outputs/root/code/models"
+MODELS=(
+    "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step100_hf"
+    "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step200_hf"
+    "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step300_hf"
+    "/pubshare/fwk/code/SeRL/evaluation/Health/outputs/pubshare/fwk/orlhf_checkpoints/checkpoint/llama32_3B-reinforce_pp_med_rl/global_step400_hf"
 )
+DATASETS=("med_qa" "nephsap" "pubmedqa")
+SUFFIX="_-1_seed0_t0.6_s0_e-1.jsonl"
+
+# 动态生成文件列表
+files=()
+for model in "${MODELS[@]}"; do
+    for dataset in "${DATASETS[@]}"; do
+        case $dataset in
+            "med_qa")
+                filename="medical_qa_medical_qa${SUFFIX}"
+                ;;
+            "nephsap")
+                filename="nephsap_medical_qa${SUFFIX}"
+                ;;
+            "pubmedqa")
+                filename="pubmedqa_pubmedqa${SUFFIX}"
+                ;;
+        esac
+        files+=("${model}/${dataset}/${filename}")
+    done
+done
 
 # 不再创建统一的报告目录，输出到原来的目录
 
