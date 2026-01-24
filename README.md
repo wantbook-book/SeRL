@@ -3,6 +3,12 @@
 </div>
 <h1 align="center"> SeRL: Self-Play Reinforcement Learning for Large Language Models with Limited Data</h1>
 
+<div align="center">
+	<a href=""><img src="https://img.shields.io/badge/arXiv-2505.20347-b31b1b.svg"/></a>
+	<a href="https://github.com/wantbook-book/SeRL"><img src="https://img.shields.io/badge/Project-SeRL-yellow"/></a>
+	<a href="https://github.com/wantbook-book/SeRL"><img src="https://visitor-badge.laobi.icu/badge?page_id=wantbook-book.SeRL"/></a>
+	<a href="https://github.com/wantbook-book/SeRL"><img src="https://img.shields.io/github/stars/wantbook-book/SeRL"/></a>
+</div>
 
 Official codebase for the paper  
 📄 **"SeRL: Self-Play Reinforcement Learning for Large Language Models with Limited Data"**. This training code is based on the [OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) framework, and the evaluation code is based on the [Qwen2.5-Math](https://github.com/QwenLM/Qwen2.5-Math), [Math-Verify](https://github.com/huggingface/Math-Verify) and [MMLU-Pro](https://github.com/TIGER-AI-Lab/MMLU-Pro).
@@ -22,6 +28,11 @@ Official codebase for the paper
 - Finally, SeRL performs conventional RL based on the generated data, facilitating iterative self-play learning.
 
 Extensive experiments on various reasoning benchmarks and across different LLM backbones demonstrate that the proposed SeRL yields results superior to its counterparts and achieves performance on par with those obtained by high-quality data with verifiable rewards.
+
+## 🗞️ News
+
+- **`[May 23, 2025]`** 🔥 The [GitHub repository](https://github.com/wantbook-book/SeRL) for **SeRL** has been **officially open-sourced**! Explore the code, contribute, or give it a ⭐️ if you find it helpful!
+- **`[May 25, 2025]`** 🔥 The paper for SeRL has been uploaded to arXiv!
 
 ## 🧭 Contents
 
